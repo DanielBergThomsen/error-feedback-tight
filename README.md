@@ -1,5 +1,5 @@
 # Tight analyses of first-order methods with error feedback
-This is the official repo for the paper available on [arXiv](example.com).
+This is the official repo for the paper available on [arXiv](https://arxiv.org/abs/2506.05271).
 We make the following contributions in the paper:
 - tight analyses of **EF and EF21** with contractive compression operators,
 on smooth strongly convex functions in the **single-worker case** ($n=1$) 📈
