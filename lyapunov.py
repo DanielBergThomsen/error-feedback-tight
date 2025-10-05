@@ -16,6 +16,7 @@ def has_lyapunov(rho, eta, delta,
                  method='EF', zero_coefs=None, use_residual=True, 
                  log_det_iterations=0, log_det_delta=1e-6, 
                  use_simplified_lyapunov=False,
+                 use_richtarik=False,
                  backup_solver=None):
     """Checks if a Lyapunov function exists for a desired rate of convergence.
 
@@ -103,7 +104,7 @@ def has_lyapunov(rho, eta, delta,
 
     # Setup problem constraints
     constraints = [p >= 0, P >> 0]
-    
+
     # Add interpolation conditions
     matrix_combinations = []
     vector_combinations = []
@@ -119,32 +120,40 @@ def has_lyapunov(rho, eta, delta,
     constraints.append(VP_plus - rho * VP << cp.sum(matrix_combinations) + supplementary_term)
     constraints.append(Vp_plus - rho * Vp <= cp.sum(vector_combinations))
 
-    # Apply custom Lyapunov function constraints
-    if not use_residual:
-        constraints.extend([p == 0, cp.trace(P) == 1])
-    else:
+    if use_richtarik:
         constraints.append(cp.trace(P) + p == 1)
+        constraints.extend([P[0, i] == 0 for i in range(3)] + [P[i, 0] == 0 for i in range(3)])
+        constraints.extend([P[1, 1] == P[2, 2]])
+        constraints.extend([P[1, 2] == -P[2, 2]])
+        constraints.extend([P[2, 1] == -P[2, 2]])
+    else:
 
-    # Apply sparsity constraints if specified
-    if zero_coefs is not None:
-        for i, j in zero_coefs:
-            constraints.extend([P[i, j] == 0, P[j, i] == 0])
+        # Apply custom Lyapunov function constraints
+        if not use_residual:
+            constraints.extend([p == 0, cp.trace(P) == 1])
+        else:
+            constraints.append(cp.trace(P) + p == 1)
 
-    # Apply method-specific simplified Lyapunov constraints
-    if method == 'EF' and use_simplified_lyapunov:
-        constraints.extend([
-            P[0, 0] == 1,
-            P[0, 3] == -1,
-            P[3, 0] == -1,
-            P[3, 3] >= 0
-        ])
-    elif method == 'EF21' and use_simplified_lyapunov:
-        constraints.extend([
-            P[1, 1] >= 0,
-            P[2, 2] == 1 - P[1, 1],
-            P[1, 2] == -P[2, 2],
-            P[2, 1] == -P[2, 2]
-        ])
+        # Apply sparsity constraints if specified
+        if zero_coefs is not None:
+            for i, j in zero_coefs:
+                constraints.extend([P[i, j] == 0, P[j, i] == 0])
+
+        # Apply method-specific simplified Lyapunov constraints
+        if method == 'EF' and use_simplified_lyapunov:
+            constraints.extend([
+                P[0, 0] == 1,
+                P[0, 3] == -1,
+                P[3, 0] == -1,
+                P[3, 3] >= 0
+            ])
+        elif method == 'EF21' and use_simplified_lyapunov:
+            constraints.extend([
+                P[1, 1] >= 0,
+                P[2, 2] == 1 - P[1, 1],
+                P[1, 2] == -P[2, 2],
+                P[2, 1] == -P[2, 2]
+            ])
 
     # Solve the optimization problem
     prob = cp.Problem(cp.Minimize(0), constraints)
@@ -218,3 +227,13 @@ def bisection(l, r, tol, solving_fun, *args, **kwargs):
         return None, None, None
     _, P, pf = solving_fun(r, *args, **kwargs)
     return r, P, pf
+
+
+if __name__ == "__main__":
+    mu = 0.5
+    L = 1.0
+    from theory_helpers import optimal_step_size
+    delta = 0.50
+    eta = optimal_step_size(mu, L, delta=delta, method='CGD')
+    t = has_lyapunov(rho=0.99, eta=eta, delta=delta, mu=mu, L=L, method = 'CGD', use_residual=True)
+    print(t[0])

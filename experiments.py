@@ -94,6 +94,87 @@ def load_data_for_method(method):
         ps_full = pickle.load(f)
     return rhos_full, rhos_fres, Ps_full, ps_full
 
+
+def _richtarik_cache_file(kappa, resolution, method):
+    return Path('data') / f'richtarik_log_{method.lower()}_kappa_{kappa}_res_{resolution}.pkl'
+
+
+def _load_or_compute_richtarik_data(kappa, epsilon_vals, eta_vals, method):
+    """Load cached Richtárik vs simplified Lyapunov results or compute them."""
+    resolution = len(epsilon_vals)
+    cache_file = _richtarik_cache_file(kappa, resolution, method)
+
+    if cache_file.exists():
+        with open(cache_file, 'rb') as f:
+            data = pickle.load(f)
+
+        cached_eps = np.asarray(data.get('epsilon_vals'))
+        cached_etas = np.asarray(data.get('eta_vals'))
+        if (
+            cached_eps.shape == epsilon_vals.shape
+            and cached_etas.shape == eta_vals.shape
+            and np.allclose(cached_eps, epsilon_vals)
+            and np.allclose(cached_etas, eta_vals)
+        ):
+            data['epsilon_vals'] = cached_eps
+            data['eta_vals'] = cached_etas
+            data['ratio'] = np.asarray(data.get('ratio'))
+            return data
+
+    epsilon_grid_local, eta_grid_local = np.meshgrid(epsilon_vals, eta_vals)
+
+    def compute_rho(eps, eta, **kwargs):
+        rho, _, _ = bisection(
+            0, 1.0, 1e-12, has_lyapunov,
+            eta=eta,
+            delta=1 - eps,
+            L=L,
+            mu=L / kappa,
+            method=method,
+            **kwargs,
+        )
+        return np.nan if rho is None else rho
+
+    rhos_simplified = dask_grid_compute(
+        lambda eps, eta: compute_rho(eps, eta, use_simplified_lyapunov=True),
+        epsilon_grid_local,
+        eta_grid_local,
+        show_progress=True,
+    )
+    rhos_richtarik = dask_grid_compute(
+        lambda eps, eta: compute_rho(eps, eta, use_richtarik=True),
+        epsilon_grid_local,
+        eta_grid_local,
+        show_progress=True,
+    )
+
+    ratio = np.full(rhos_simplified.shape, np.nan, dtype=float)
+    stable_mask = (
+        (rhos_simplified > 0)
+        & (rhos_simplified < 1)
+        & (rhos_richtarik > 0)
+        & (rhos_richtarik < 1)
+    )
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio[stable_mask] = (
+            np.log(rhos_richtarik[stable_mask])
+            / np.log(rhos_simplified[stable_mask])
+        )
+
+    data = {
+        'kappa': kappa,
+        'method': method,
+        'epsilon_vals': epsilon_vals,
+        'eta_vals': eta_vals,
+        'ratio': ratio,
+    }
+
+    with open(cache_file, 'wb') as f:
+        pickle.dump(data, f)
+
+    return data
+
+
 def find_best_eta(delta, mu, L, resolution, method='EF', **kwargs):
     """Find the best eta value for given parameters."""
     eta_vals = np.linspace(0.0001, 2/(mu+L), resolution)
@@ -372,6 +453,58 @@ def generate_best_etas():
                      save_file=f'figures/best_etas_{mu}_{L}.pdf')
     plt.close()
 
+def generate_richtarik_log_complexity():
+    print("Generating Figure 9: richtarik_log_comparison.pdf ...")
+
+    method = 'EF21'
+    kappas = [2, 5, 10]
+    grid_resolution_local = 120
+    epsilon_vals = np.linspace(0.01, 0.99, grid_resolution_local)
+
+    contour_data = []
+    lineplot_data = []
+    txtbox_kwargs = []
+
+    for kappa in kappas:
+        mu = L / kappa
+        eta_max = 1.5 / (L + mu)
+        eta_vals = np.linspace(0.05, eta_max, grid_resolution_local)
+        cache = _load_or_compute_richtarik_data(kappa, epsilon_vals, eta_vals, method)
+        cached_eps = cache['epsilon_vals']
+        cached_etas = cache['eta_vals']
+        ratio = cache['ratio']
+
+        epsilon_grid_local, eta_grid_local = np.meshgrid(cached_eps, cached_etas)
+
+        contour_data.append((epsilon_grid_local, eta_grid_local, ratio))
+        lineplot_data.append((
+            cached_eps,
+            optimal_step_size(mu, L, 1 - cached_eps, method=method),
+            {'color': 'blue', 'label': r'$\\eta_{\star}$', 'linestyle': '--'},
+        ))
+        txtbox_kwargs.append(standard_textbox(f'$\\kappa = {kappa}$', {'x': 0.65}))
+
+    contour_plot(
+        contour_data,
+        cmap='Reds_r',
+        levels=100,
+        center=False,
+        lineplot_data=lineplot_data,
+        txtbox_kwargs=txtbox_kwargs,
+        increasing_colorbar=True,
+        colorbar_label=r'$\log \rho^{\prime} / \log \rho_{\text{simp}}$',
+        xlabel=r'$\epsilon$',
+        ylabel=r'$\eta$',
+        figsize=(15, 4),
+        dpi=150,
+        save_file='figures/richtarik_log_comparison.pdf',
+        label_size=LABEL_SIZE,
+        tick_size=TICK_SIZE,
+        return_plt=True,
+    )
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate figures and tables for NeurIPS paper')
     parser.add_argument('experiment', type=str, help='Name of the experiment to run or "all" to run all experiments')
@@ -393,7 +526,8 @@ def main():
         "Table 4": lambda: generate_tightness_table("EF21"),
         "Figure 6": lambda: generate_multiple_iterations("EF"),
         "Figure 7": lambda: generate_multiple_iterations("EF21"),
-        "Figure 8": generate_best_etas
+        "Figure 8": generate_best_etas,
+        "Figure 9": generate_richtarik_log_complexity
     }
 
     if args.experiment == "all":
