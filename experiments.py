@@ -12,7 +12,7 @@ from matplotlib.ticker import MaxNLocator
 
 from pepit_helpers import find_cycle, worst_case_performance
 from lyapunov import has_lyapunov, bisection
-from plotting import contour_plot, line_plot, standard_textbox
+from plotting import contour_plot, line_plot, standard_textbox, set_matplotlib_style
 from utils import dask_grid_compute, dask_parallel_map, nan_greater_than
 from theory_helpers import optimal_step_size
 
@@ -186,6 +186,47 @@ def find_best_eta(delta, mu, L, resolution, method='EF', **kwargs):
         best_eta = eta_vals[np.nanargmin(rhos)]
         return best_eta
 
+
+def _compute_cgd_superiority_data():
+    print("Computing data for Figure 2...")
+
+    rhos_cgd_optimal = {}
+    rhos_ef_optimal = {}
+    rhos_ef21_optimal = {}
+
+    for mu in mus:
+        rhos_cgd_optimal[mu] = []
+        rhos_ef_optimal[mu] = []
+        rhos_ef21_optimal[mu] = []
+        for eps in tqdm(epsilon, total=len(epsilon)):
+            eta_cgd = optimal_step_size(mu, L, 1 - eps, 'CGD')
+            rho_cgd = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=eta_cgd, method='CGD', use_simplified=True)
+            rhos_cgd_optimal[mu].append(rho_cgd)
+            rho_ef = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=optimal_step_size(mu, L, 1 - eps, 'EF'), method='EF', use_simplified=True)
+            rhos_ef_optimal[mu].append(rho_ef)
+            rho_ef21 = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=optimal_step_size(mu, L, 1 - eps, 'EF21'), method='EF21', use_simplified=True)
+            rhos_ef21_optimal[mu].append(rho_ef21)
+
+    data = {
+        'rhos_cgd_optimal': rhos_cgd_optimal,
+        'rhos_ef_optimal': rhos_ef_optimal,
+        'rhos_ef21_optimal': rhos_ef21_optimal
+    }
+    with open('data/cgd_superiority_data.pkl', 'wb') as f:
+        pickle.dump(data, f)
+    print("✓ Saved computed data for Figure 2")
+    return data
+
+
+def _load_cgd_superiority_data(context="Figure 2"):
+    cache_path = Path('data/cgd_superiority_data.pkl')
+    if cache_path.exists():
+        with cache_path.open('rb') as f:
+            print(f"✓ Loaded existing data for {context}")
+            return pickle.load(f)
+    return _compute_cgd_superiority_data()
+
+
 def generate_performance_comparison():
     print("Generating Figure 1: performance_comparison.pdf ...")
     # Load or compute data for all methods
@@ -288,52 +329,11 @@ def generate_tightness_table(method):
 
 def generate_cgd_superiority():
     print("Generating Figure 2: cgd_superiority_mu_{mu}.pdf ...")
-    
-    # Try to load existing data
-    try:
-        with open('data/cgd_superiority_data.pkl', 'rb') as f:
-            data = pickle.load(f)
-            best_etas_cgd = data['best_etas_cgd']
-            rhos_cgd_optimal = data['rhos_cgd_optimal']
-            rhos_ef_optimal = data['rhos_ef_optimal']
-            rhos_ef21_optimal = data['rhos_ef21_optimal']
-            print("✓ Loaded existing data for Figure 2")
-    except FileNotFoundError:
-        print("Computing data for Figure 2...")
-        # Compute best etas for CGD
-        best_etas_cgd = {}
-        for mu in mus:
-            best_etas_cgd[mu] = np.zeros_like(epsilon)
-            for i, eps in enumerate(tqdm(epsilon, total=len(epsilon))):
-                best_etas_cgd[mu][i] = find_best_eta(1 - eps, mu, L, 100, method='CGD', use_simplified=True)
-        
-        # Compute optimal rhos for all methods
-        rhos_cgd_optimal = {}
-        rhos_ef_optimal = {}
-        rhos_ef21_optimal = {}
-        
-        for mu in mus:
-            rhos_cgd_optimal[mu] = []
-            rhos_ef_optimal[mu] = []
-            rhos_ef21_optimal[mu] = []
-            for i, eps in enumerate(tqdm(epsilon, total=len(epsilon))):
-                rho_cgd = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=best_etas_cgd[mu][i], method='CGD', use_simplified=True)
-                rhos_cgd_optimal[mu].append(rho_cgd)
-                rho_ef = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=optimal_step_size(mu, L, 1 - eps, 'EF'), method='EF', use_simplified=True)
-                rhos_ef_optimal[mu].append(rho_ef)
-                rho_ef21 = worst_case_performance(mu=mu, L=L, delta=1 - eps, eta=optimal_step_size(mu, L, 1 - eps, 'EF21'), method='EF21', use_simplified=True)
-                rhos_ef21_optimal[mu].append(rho_ef21)
-        
-        # Save the computed data
-        data = {
-            'best_etas_cgd': best_etas_cgd,
-            'rhos_cgd_optimal': rhos_cgd_optimal,
-            'rhos_ef_optimal': rhos_ef_optimal,
-            'rhos_ef21_optimal': rhos_ef21_optimal
-        }
-        with open('data/cgd_superiority_data.pkl', 'wb') as f:
-            pickle.dump(data, f)
-        print("✓ Saved computed data for Figure 2")
+
+    data = _load_cgd_superiority_data("Figure 2")
+    rhos_cgd_optimal = data['rhos_cgd_optimal']
+    rhos_ef_optimal = data['rhos_ef_optimal']
+    rhos_ef21_optimal = data['rhos_ef21_optimal']
     
     # Generate plots
     fig, axes = plt.subplots(1, len(mus), figsize=(15, 4), dpi=150, sharex=True)
@@ -505,6 +505,122 @@ def generate_richtarik_log_complexity():
     plt.close()
 
 
+def generate_optimal_contraction_comparison():
+    print("Generating Figure 11: complexity_cgd_vs_ef.pdf ...")
+
+    data = _load_cgd_superiority_data("Figure 11")
+    rhos_cgd_optimal = data['rhos_cgd_optimal']
+    rhos_ef_optimal = data['rhos_ef_optimal']
+
+    ratio_data = {}
+    peak_points = {}
+    global_min = np.inf
+    global_max = -np.inf
+
+    for mu in mus:
+        rho_cgd = np.asarray(rhos_cgd_optimal[mu], dtype=float)
+        rho_ef = np.asarray(rhos_ef_optimal[mu], dtype=float)
+
+        ratio = np.full_like(rho_cgd, np.nan, dtype=float)
+        valid_mask = (rho_cgd > 0) & (rho_cgd < 1) & (rho_ef > 0) & (rho_ef < 1)
+        ratio[valid_mask] = np.log(rho_cgd[valid_mask]) / np.log(rho_ef[valid_mask])
+
+        ratio_data[mu] = ratio
+
+        finite_mask = np.isfinite(ratio)
+        if finite_mask.any():
+            finite_vals = ratio[finite_mask]
+            global_min = min(global_min, np.nanmin(finite_vals))
+            global_max = max(global_max, np.nanmax(finite_vals))
+
+            peak_idx = np.nanargmax(ratio)
+            peak_points[mu] = (float(epsilon[peak_idx]), float(ratio[peak_idx]))
+        else:
+            peak_points[mu] = None
+
+    if not np.isfinite(global_min) or not np.isfinite(global_max):
+        global_min, global_max = 1.0, 1.1
+
+    span = global_max - global_min
+    padding = 0.05 * span if span > 1e-6 else 0.02
+    y_lower = max(0.0, global_min - padding)
+    y_upper = global_max + padding
+
+    set_matplotlib_style()
+    fig, axes = plt.subplots(1, len(mus), figsize=(15, 4), dpi=150, sharex=True, sharey=True)
+    axes_array = np.atleast_1d(axes)
+
+    curve_label = r'$\log \rho_{\mathrm{CGD}} / \log \rho_{\mathrm{EF}}$'
+
+    for ax, mu in zip(axes_array, reversed(mus)):
+        ratio = ratio_data[mu]
+
+        line_plot(
+            [(epsilon, ratio, {'color': 'blue', 'label': curve_label})],
+            ax=ax,
+            plt_legend=False,
+            xlabel=r'$\epsilon$',
+            ylabel=curve_label if ax is axes_array[0] else None,
+            label_size=LABEL_SIZE,
+            tick_size=TICK_SIZE,
+            txtbox_kwargs=standard_textbox(
+                f'$\\kappa = {L / mu}$',
+                {'x': 0.95, 'y': 0.95, 'ha': 'right', 'va': 'top'}
+            ),
+            return_plt=True,
+        )
+
+        ax.set_ylim(y_lower, y_upper)
+
+        x_min, x_max = ax.get_xlim()
+        peak = peak_points[mu]
+
+        if peak is not None:
+            peak_x, peak_y = peak
+
+            x_frac = 0.0 if x_max == x_min else (peak_x - x_min) / (x_max - x_min)
+            y_frac = 0.0 if y_upper == y_lower else (peak_y - y_lower) / (y_upper - y_lower)
+
+            ax.axhline(
+                peak_y,
+                xmin=0.0,
+                xmax=np.clip(x_frac, 0.0, 1.0),
+                color='blue',
+                linestyle='--',
+                linewidth=1.0,
+                alpha=0.8,
+            )
+            ax.axvline(
+                peak_x,
+                ymin=0.0,
+                ymax=np.clip(y_frac, 0.0, 1.0),
+                color='blue',
+                linestyle='--',
+                linewidth=1.0,
+                alpha=0.8,
+            )
+
+            if mu != mus[-1]:
+                ax.text(
+                    -0.035,
+                    np.clip(y_frac, 0.0, 1.0),
+                    f'{peak_y:.2f}',
+                    color='blue',
+                    fontsize=TICK_SIZE,
+                    va='center',
+                    ha='right',
+                    transform=ax.transAxes,
+                )
+
+            ax.plot(peak_x, peak_y, marker='*', color='blue', markersize=10, zorder=5)
+
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.6)
+
+    fig.tight_layout()
+    fig.savefig('figures/complexity_cgd_vs_ef.pdf', bbox_inches='tight')
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate figures and tables for NeurIPS paper')
     parser.add_argument('experiment', type=str, help='Name of the experiment to run or "all" to run all experiments')
@@ -527,7 +643,8 @@ def main():
         "Figure 6": lambda: generate_multiple_iterations("EF"),
         "Figure 7": lambda: generate_multiple_iterations("EF21"),
         "Figure 8": generate_best_etas,
-        "Figure 9": generate_richtarik_log_complexity
+        "Figure 9": generate_richtarik_log_complexity,
+        "Figure 11": generate_optimal_contraction_comparison
     }
 
     if args.experiment == "all":

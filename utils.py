@@ -122,18 +122,26 @@ def dask_grid_compute(func, xs, ys, show_progress=True):
         return results
 
 
-def dask_parallel_map(func, xs):
+def dask_parallel_map(func, xs, show_progress=True):
     """Maps a function over a sequence of values in parallel using Dask.
     
     Args:
         func: Function to apply to each element.
         xs: Sequence of values to process.
+        show_progress: Whether to display a progress bar while computing.
         
     Returns:
         list: Results of applying func to each element in xs.
     """
     delayed_results = [delayed(func)(x) for x in xs]
-    return compute(*delayed_results, scheduler="processes")
+
+    if show_progress:
+        with TqdmCallback(desc="compute"):
+            computed_results = compute(*delayed_results, scheduler="processes")
+    else:
+        return compute(*delayed_results, scheduler="processes")
+
+    return computed_results
 
 
 def nan_greater_than(array, threshold):
