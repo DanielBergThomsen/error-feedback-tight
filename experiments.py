@@ -457,7 +457,7 @@ def generate_richtarik_log_complexity():
     print("Generating Figure 9: richtarik_log_comparison.pdf ...")
 
     method = 'EF21'
-    kappas = [2, 5, 10]
+    kappas = [2, 10, 50]
     grid_resolution_local = 120
     epsilon_vals = np.linspace(0.01, 0.99, grid_resolution_local)
 
@@ -492,7 +492,7 @@ def generate_richtarik_log_complexity():
         lineplot_data=lineplot_data,
         txtbox_kwargs=txtbox_kwargs,
         increasing_colorbar=True,
-        colorbar_label=r'$\log \rho^{\prime} / \log \rho_{\text{simp}}$',
+        colorbar_label=r'$\log \rho^{\prime} / \log \rho_{\star}$',
         xlabel=r'$\epsilon$',
         ylabel=r'$\eta$',
         figsize=(15, 4),
