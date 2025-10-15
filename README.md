@@ -14,7 +14,9 @@ This repository contains the code to reproduce all figures and tables from our p
 - A command-line interface for generating individual figures/tables or all results at once
 - Automatic data caching to avoid recomputing results unnecessarily
 
-The repository additionally allows you to verify some of the proofs written in the paper by running a script written in Wolfram Language.
+The repository additionally allows you to verify the proofs written in the paper in two ways:
+1. Global validation using PEPit: two Jupyter notebook have been provided which numerically certify the statements given in Theorem 1 and 2 of the paper.
+2. Local validation of upper bounds: WolframScripts have been provided to verify the first parts of the proofs in Theorem 1 and 2. Similarly, scripts have been adapted for the random compressor setting as well.
 
 ## Setup
 
@@ -51,11 +53,12 @@ Note:
 - You should delete the data folder if you make any changes to the code.
 
 ## Verifying proofs
-In order to verify the proofs, you should install the Wolfram Engine, which is available for free at https://www.wolfram.com/engine/.
+Note that the paper itself contains direct links to the files used to certify the theorems. This is the easiest way of navigating our certificates.
 
-After following the install instructions for your platform, you can verify the rates we show by simply running
+
+In order to verify the proof steps written in WolframScript, you should install the Wolfram Engine, which is available for free at https://www.wolfram.com/engine/. After following the install instructions for your platform, you can verify the rates we show by simply running e.g.
 ```bash
-wolframscript -script verify_proofs.wls
+wolframscript -script certificates/EF/upper_bound_CAS.wls
 ```
-in the root of the project directory.
+in the root of the project directory. You can do the same for the other `*.wls` files in the subdirectories of the `certificates` directory.
 
