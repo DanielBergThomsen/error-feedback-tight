@@ -556,7 +556,7 @@ def generate_optimal_contraction_comparison():
         ratio = ratio_data[mu]
 
         line_plot(
-            [(epsilon, ratio, {'color': 'blue', 'label': curve_label})],
+            [(epsilon, ratio, {'color': 'blue', 'label': curve_label, 'linewidth': 3.0})],
             ax=ax,
             plt_legend=False,
             xlabel=r'$\epsilon$',
@@ -564,7 +564,7 @@ def generate_optimal_contraction_comparison():
             label_size=LABEL_SIZE,
             tick_size=TICK_SIZE,
             txtbox_kwargs=standard_textbox(
-                f'$\\kappa = {L / mu}$',
+                f'$\\kappa = {int(round(L / mu))}$',
                 {'x': 0.95, 'y': 0.95, 'ha': 'right', 'va': 'top'}
             ),
             return_plt=True,
@@ -585,18 +585,18 @@ def generate_optimal_contraction_comparison():
                 peak_y,
                 xmin=0.0,
                 xmax=np.clip(x_frac, 0.0, 1.0),
-                color='blue',
+                color='#009E73',
                 linestyle='--',
-                linewidth=1.0,
+                linewidth=2.0,
                 alpha=0.8,
             )
             ax.axvline(
                 peak_x,
                 ymin=0.0,
                 ymax=np.clip(y_frac, 0.0, 1.0),
-                color='blue',
+                color='#009E73',
                 linestyle='--',
-                linewidth=1.0,
+                linewidth=2.0,
                 alpha=0.8,
             )
 
@@ -605,14 +605,14 @@ def generate_optimal_contraction_comparison():
                     -0.035,
                     np.clip(y_frac, 0.0, 1.0),
                     f'{peak_y:.2f}',
-                    color='blue',
+                    color='#009E73',
                     fontsize=TICK_SIZE,
                     va='center',
                     ha='right',
                     transform=ax.transAxes,
                 )
 
-            ax.plot(peak_x, peak_y, marker='*', color='blue', markersize=10, zorder=5)
+            ax.plot(peak_x, peak_y, marker='*', color='#009E73', markersize=15, zorder=5)
 
         ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.6)
 
