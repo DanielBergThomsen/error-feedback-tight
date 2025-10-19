@@ -523,7 +523,7 @@ def generate_optimal_contraction_comparison():
 
         ratio = np.full_like(rho_cgd, np.nan, dtype=float)
         valid_mask = (rho_cgd > 0) & (rho_cgd < 1) & (rho_ef > 0) & (rho_ef < 1)
-        ratio[valid_mask] = np.log(rho_cgd[valid_mask]) / np.log(rho_ef[valid_mask])
+        ratio[valid_mask] = np.log(rho_ef[valid_mask]) / np.log(rho_cgd[valid_mask])
 
         ratio_data[mu] = ratio
 
@@ -533,7 +533,7 @@ def generate_optimal_contraction_comparison():
             global_min = min(global_min, np.nanmin(finite_vals))
             global_max = max(global_max, np.nanmax(finite_vals))
 
-            peak_idx = np.nanargmax(ratio)
+            peak_idx = np.nanargmin(ratio)
             peak_points[mu] = (float(epsilon[peak_idx]), float(ratio[peak_idx]))
         else:
             peak_points[mu] = None
@@ -550,7 +550,7 @@ def generate_optimal_contraction_comparison():
     fig, axes = plt.subplots(1, len(mus), figsize=(15, 4), dpi=150, sharex=True, sharey=True)
     axes_array = np.atleast_1d(axes)
 
-    curve_label = r'$\log \rho_{\mathrm{CGD}} / \log \rho_{\mathrm{EF}}$'
+    curve_label = r'$\log \rho_{\mathrm{EF}} / \log \rho_{\mathrm{CGD}}$'
 
     for ax, mu in zip(axes_array, reversed(mus)):
         ratio = ratio_data[mu]
@@ -565,7 +565,7 @@ def generate_optimal_contraction_comparison():
             tick_size=TICK_SIZE,
             txtbox_kwargs=standard_textbox(
                 f'$\\kappa = {int(round(L / mu))}$',
-                {'x': 0.95, 'y': 0.95, 'ha': 'right', 'va': 'top'}
+                {'x': 0.95, 'y': 0.15, 'ha': 'right', 'va': 'top'}
             ),
             return_plt=True,
         )
@@ -600,17 +600,16 @@ def generate_optimal_contraction_comparison():
                 alpha=0.8,
             )
 
-            if mu != mus[-1]:
-                ax.text(
-                    -0.035,
-                    np.clip(y_frac, 0.0, 1.0),
-                    f'{peak_y:.2f}',
-                    color='#009E73',
-                    fontsize=TICK_SIZE,
-                    va='center',
-                    ha='right',
-                    transform=ax.transAxes,
-                )
+            ax.text(
+                -0.035,
+                np.clip(y_frac, 0.0, 1.0),
+                f'{peak_y:.2f}',
+                color='#009E73',
+                fontsize=TICK_SIZE,
+                va='center',
+                ha='right',
+                transform=ax.transAxes,
+            )
 
             ax.plot(peak_x, peak_y, marker='*', color='#009E73', markersize=15, zorder=5)
 
