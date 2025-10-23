@@ -66,6 +66,6 @@ def optimal_step_size(mu, L, delta, method):
     if method in ['EF', 'EF21']:
         return standard_step_size * (delta / (1 + np.sqrt(1 - delta))**2)
     elif method == 'CGD':
-        return 2 / ((1+np.sqrt(1 - delta)) * mu + (1+np.sqrt(1 - delta)) * L)
+        return 2 / ((1-np.sqrt(1 - delta)) * mu + (1+np.sqrt(1 - delta)) * L)
     else:
         raise ValueError(f"Method '{method}' not supported")
