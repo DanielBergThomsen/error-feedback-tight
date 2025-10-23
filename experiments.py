@@ -218,7 +218,7 @@ def _compute_cgd_superiority_data():
     return data
 
 
-def _load_cgd_superiority_data(context="Figure 2"):
+def _load_cgd_superiority_data(context="Figure 4"):
     cache_path = Path('data/cgd_superiority_data.pkl')
     if cache_path.exists():
         with cache_path.open('rb') as f:
@@ -257,6 +257,227 @@ def generate_performance_comparison():
                 save_file='figures/performance_comparison.pdf')
     plt.close()
 
+def generate_rate_comparison():
+    print("Generating Figure 2: rate_comparison.pdf ...")
+
+    set_matplotlib_style()
+
+    # Use kappas derived from global mus and L to stay consistent
+    kappas = [L / mu for mu in reversed(mus)]  # ascending order e.g., [2, 4, 10]
+    epsilons = epsilon  # use global epsilon grid (0.01..0.99)
+
+    def optimal_rate(kappa, eps):
+        sqrt_eps = np.sqrt(eps)
+        kappa_minus_1 = kappa - 1
+        inner_sqrt = (
+            (kappa_minus_1) ** 2
+            + eps * (kappa_minus_1) ** 2
+            + 2 * sqrt_eps * (1 + kappa * (6 + kappa))
+        )
+        numerator = (sqrt_eps - 1) * kappa_minus_1 * (-1 - sqrt_eps * kappa_minus_1 + kappa + np.sqrt(inner_sqrt))
+        denominator = 2 * (1 + kappa) ** 2
+        return sqrt_eps - numerator / denominator
+
+    def richtarik_rate(kappa, eps):
+        # Assumes L=1 globally as in this script
+        theta = 1 - np.sqrt(eps)
+        # Avoid divide-by-zero at eps -> 1 by relying on global eps range (0.01..0.99)
+        beta = eps / (1 - np.sqrt(eps))
+        gamma1 = theta / (2 * (1 / kappa))  # 1/mu with L=1
+        gamma2 = 1 / (L * (1 + np.sqrt(2 * beta / theta)))
+        gamma = np.minimum(gamma1, gamma2)
+        return 1 - gamma / kappa
+
+    fig, axes = plt.subplots(1, len(kappas), figsize=(15, 4), dpi=150, sharey=True)
+    axes_array = np.atleast_1d(axes)
+
+    for idx, (ax, kappa) in enumerate(zip(axes_array, kappas)):
+        opt_rates = optimal_rate(kappa, epsilons)
+        richtarik_rates = richtarik_rate(kappa, epsilons)
+
+        # Plot both curves
+        ax.plot(epsilons, opt_rates, label='Optimal rate', color='blue', linewidth=3)
+        ax.plot(epsilons, richtarik_rates, label=r"Richt\'ar\'ik et al.", color='red', linewidth=3)
+
+        # Labels and styling
+        ax.set_xlabel(r'$\epsilon$', fontsize=LABEL_SIZE)
+        if idx == 0:
+            ax.set_ylabel(r'$\rho$', fontsize=LABEL_SIZE)
+        ax.grid(True, which='both', linestyle=':', linewidth=0.7)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(bottom=0)
+        ax.tick_params(labelsize=TICK_SIZE)
+
+        # Kappa textbox
+        ax.text(**standard_textbox(f'$\\kappa = {int(round(kappa))}$', {'x': 0.05, 'y': 0.15}), transform=ax.transAxes)
+
+        # Legend in lower right
+        ax.legend(fontsize=14, loc='lower right')
+
+    fig.tight_layout()
+    fig.savefig('figures/rate_comparison.pdf', bbox_inches='tight')
+    plt.close(fig)
+
+def generate_rate_log_complexity_fig12():
+    print("Generating Figure 3: rate_log_complexity.pdf ...")
+
+    set_matplotlib_style()
+
+    kappas = [L / mu for mu in reversed(mus)]
+    epsilons = epsilon
+
+    def optimal_rate(kappa, eps):
+        sqrt_eps = np.sqrt(eps)
+        kappa_minus_1 = kappa - 1
+        inner_sqrt = (
+            (kappa_minus_1) ** 2
+            + eps * (kappa_minus_1) ** 2
+            + 2 * sqrt_eps * (1 + kappa * (6 + kappa))
+        )
+        numerator = (sqrt_eps - 1) * kappa_minus_1 * (
+            -1 - sqrt_eps * kappa_minus_1 + kappa + np.sqrt(inner_sqrt)
+        )
+        denominator = 2 * (1 + kappa) ** 2
+        return sqrt_eps - numerator / denominator
+
+    def richtarik_rate(kappa, eps):
+        theta = 1 - np.sqrt(eps)
+        beta = eps / (1 - np.sqrt(eps))
+        gamma1 = theta / (2 * (1 / kappa))
+        gamma2 = 1 / (L * (1 + np.sqrt(2 * beta / theta)))
+        gamma = np.minimum(gamma1, gamma2)
+        return 1 - gamma / kappa
+
+    ratio_by_kappa = {}
+    global_min, global_max = np.inf, -np.inf
+    for kappa in kappas:
+        opt = optimal_rate(kappa, epsilons)
+        rich = richtarik_rate(kappa, epsilons)
+
+        ratio = np.full_like(opt, np.nan, dtype=float)
+        mask = (opt > 0) & (opt < 1) & (rich > 0) & (rich < 1)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratio[mask] = np.log(rich[mask]) / np.log(opt[mask])
+
+        ratio_by_kappa[kappa] = ratio
+
+        finite = np.isfinite(ratio)
+        if finite.any():
+            global_min = min(global_min, np.nanmin(ratio[finite]))
+            global_max = max(global_max, np.nanmax(ratio[finite]))
+
+    if not np.isfinite(global_min) or not np.isfinite(global_max):
+        global_min, global_max = 1.0, 1.1
+
+    span = global_max - global_min
+    padding = 0.05 * span if span > 1e-6 else 0.02
+    y_lower = max(0.0, global_min - padding)
+    y_upper = global_max + padding
+
+    fig, axes = plt.subplots(1, len(kappas), figsize=(15, 4), dpi=150, sharex=True, sharey=True)
+    axes_array = np.atleast_1d(axes)
+
+    # Use LaTeX with text accents for Richtárik in text mode
+    ylabel = "$\\log \\rho_{\\text{Richt\\'ar\\'ik}} / \\log \\rho_{\\star}$"
+
+    for ax, kappa in zip(axes_array, kappas):
+        ratio = ratio_by_kappa[kappa]
+        line_plot(
+            [(epsilons, ratio, {"color": "blue", "linewidth": 3.0})],
+            ax=ax,
+            plt_legend=False,
+            xlabel=r'$\epsilon$',
+            ylabel=ylabel if ax is axes_array[0] else None,
+            label_size=LABEL_SIZE,
+            tick_size=TICK_SIZE,
+            txtbox_kwargs=standard_textbox(f'$\\kappa = {int(round(kappa))}$', {"x": 0.95, "y": 0.15, "ha": "right", "va": "top"}),
+            return_plt=True,
+        )
+        ax.set_ylim(y_lower, y_upper)
+        # Mark global minimum, mirroring Figure 3's style
+        finite_mask = np.isfinite(ratio)
+        if finite_mask.any():
+            min_idx = int(np.nanargmin(ratio))
+            min_x = float(epsilons[min_idx])
+            min_y = float(ratio[min_idx])
+
+            x_min, x_max = ax.get_xlim()
+            x_frac = 0.0 if x_max == x_min else (min_x - x_min) / (x_max - x_min)
+            y_frac = 0.0 if y_upper == y_lower else (min_y - y_lower) / (y_upper - y_lower)
+
+            ax.axhline(min_y, xmin=0.0, xmax=np.clip(x_frac, 0.0, 1.0), color='#009E73', linestyle='--', linewidth=2.0, alpha=0.8)
+            ax.axvline(min_x, ymin=0.0, ymax=np.clip(y_frac, 0.0, 1.0), color='#009E73', linestyle='--', linewidth=2.0, alpha=0.8)
+            ax.plot(min_x, min_y, marker='*', color='#009E73', markersize=15, zorder=5)
+            # Show numeric label for kappa != 2 only
+            if int(round(kappa)) != 2:
+                ax.text(
+                    -0.035,
+                    np.clip(y_frac, 0.0, 1.0),
+                    f'{min_y:.2f}',
+                    color='#009E73',
+                    fontsize=TICK_SIZE,
+                    va='center',
+                    ha='right',
+                    transform=ax.transAxes,
+                )
+
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.6)
+
+    fig.tight_layout()
+    fig.savefig('figures/rate_log_complexity.pdf', bbox_inches='tight')
+    plt.close(fig)
+
+def generate_cgd_vs_ef_rate_plot():
+    print("Generating Figure 4: cgd_vs_ef_rate_comparison.pdf ...")
+
+    set_matplotlib_style()
+
+    data = _load_cgd_superiority_data("Figure 13")
+    rhos_cgd_optimal = data['rhos_cgd_optimal']
+    rhos_ef_optimal = data['rhos_ef_optimal']
+
+    fig, axes = plt.subplots(1, len(mus), figsize=(15, 4), dpi=150, sharex=True, sharey=True)
+    axes_array = np.atleast_1d(axes)
+
+    for ax, mu in zip(axes_array, reversed(mus)):
+        kappa = int(round(L / mu))
+        curve_cgd = np.asarray(rhos_cgd_optimal[mu], dtype=float)
+        curve_ef = np.asarray(rhos_ef_optimal[mu], dtype=float)
+
+        # Mask out unstable values for visual clarity
+        mask_cgd = (curve_cgd > 0) & (curve_cgd < 1)
+        mask_ef = (curve_ef > 0) & (curve_ef < 1)
+        curve_cgd_plot = np.where(mask_cgd, curve_cgd, np.nan)
+        curve_ef_plot = np.where(mask_ef, curve_ef, np.nan)
+
+        line_plot(
+            [
+                (epsilon, curve_cgd_plot, {'color': 'blue', 'label': 'CGD', 'linewidth': 3}),
+                (epsilon, curve_ef_plot, {'color': 'red', 'label': 'EF/EF21', 'linewidth': 3}),
+            ],
+            ax=ax,
+            plt_legend=True,
+            xlabel=r'$\epsilon$',
+            ylabel=r'$\rho$' if ax is axes_array[0] else None,
+            label_size=LABEL_SIZE,
+            tick_size=TICK_SIZE,
+            txtbox_kwargs=standard_textbox(f'$\\kappa = {kappa}$', {'x': 0.05, 'y': 0.15}),
+            return_plt=True,
+        )
+
+        # Always put legend at lower right
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc='lower right', fontsize=LABEL_SIZE)
+
+        ax.set_xlim(0, 1)
+        ax.set_ylim(bottom=0)
+        ax.grid(True, which='both', linestyle=':', linewidth=0.7)
+
+    fig.tight_layout()
+    fig.savefig('figures/cgd_vs_ef_rate_comparison.pdf', bbox_inches='tight')
+    plt.close(fig)
+
 def generate_ef_equal_ef21():
     print("Generating Table 1: ef_equal_ef21.tex ...")
     rhos_ef_full, _, _, _ = load_data_for_method('EF')
@@ -268,9 +489,20 @@ def generate_ef_equal_ef21():
         diff_filtered[mu] = (rhos_ef_full[mu] - rhos_ef21_full[mu]).copy()
         diff_filtered[mu][mask] = np.nan
     
-    max_diffs = {f'$\\kappa = {L / mu}$': np.nanmax(diff_filtered[mu]) for mu in mus}
+    max_diffs = {f'$\\kappa = {int(round(L / mu))}$': np.nanmax(diff_filtered[mu]) for mu in mus}
     df = pd.DataFrame([max_diffs], index=['Absolute error'])
-    
+
+    # Normalize column names to integer kappas and sort ascending (2, 4, 10)
+    def _kappa_int(col):
+        try:
+            val_str = col.split('=')[1].strip().split('$')[0]
+            return int(round(float(val_str)))
+        except Exception:
+            return 0
+    rename_map = {c: f'$\\kappa = {_kappa_int(c)}$' for c in df.columns}
+    df = df.rename(columns=rename_map)
+    df = df.reindex(sorted(df.columns, key=_kappa_int), axis=1)
+
     body = df.to_latex(index=True, escape=False, float_format=lambda x: f'{x:.2e}')
     with open('figures/ef_equal_ef21.tex', 'w') as f:
         f.write(body)
@@ -295,7 +527,7 @@ def generate_tightness_table(method):
                 mask = rhos_full[mu] > 1
                 diff_filtered = (rhos_full[mu] - rhos_simple[mu]).copy()
                 diff_filtered[mask] = np.nan
-                max_diffs[f'$\\kappa = {L / mu}$'] = np.nanmax(diff_filtered)
+                max_diffs[f'$\\kappa = {int(round(L / mu))}$'] = np.nanmax(diff_filtered)
             else:
                 # For EF and EF21, compute only at optimal step sizes
                 diffs = []
@@ -313,7 +545,7 @@ def generate_tightness_table(method):
                     if rho_full <= 1:  # Only consider stable points
                         diffs.append(abs(rho_full - rho_simple))
                 
-                max_diffs[f'$\\kappa = {L / mu}$'] = max(diffs) if diffs else np.nan
+                max_diffs[f'$\\kappa = {int(round(L / mu))}$'] = max(diffs) if diffs else np.nan
         
         # Save the computed data
         with open(f'data/tightness_{method.lower()}_data.pkl', 'wb') as f:
@@ -321,14 +553,22 @@ def generate_tightness_table(method):
         print(f"✓ Saved computed data for {table_map.get(method, method)}")
     
     df = pd.DataFrame([max_diffs], index=['Absolute error'])
-    # Sort by kappa value (L/mu)
-    df = df.reindex(sorted(df.columns, key=lambda x: float(x.split('=')[1].strip().split('$')[0])), axis=1)
+    # Normalize column names to integer kappas (avoid 2.0, 4.0, 10.0) and sort by kappa
+    def _kappa_int(col):
+        try:
+            val_str = col.split('=')[1].strip().split('$')[0]
+            return int(round(float(val_str)))
+        except Exception:
+            return 0
+    rename_map = {c: f'$\\kappa = {_kappa_int(c)}$' for c in df.columns}
+    df = df.rename(columns=rename_map)
+    df = df.reindex(sorted(df.columns, key=_kappa_int), axis=1)
     body = df.to_latex(index=True, escape=False, float_format=lambda x: f'{x:.2e}')
     with open(f'figures/rhos_{method.lower()}_tightness.tex', 'w') as f:
         f.write(body)
 
 def generate_cgd_superiority():
-    print("Generating Figure 2: cgd_superiority_mu_{mu}.pdf ...")
+    print("Generating Figure 4: cgd_superiority_mu_{mu}.pdf ...")
 
     data = _load_cgd_superiority_data("Figure 2")
     rhos_cgd_optimal = data['rhos_cgd_optimal']
@@ -342,14 +582,14 @@ def generate_cgd_superiority():
                   (epsilon, rhos_ef_optimal[mu], {'color': 'red', 'label': 'EF'}),
                   (epsilon, rhos_ef21_optimal[mu], {'color': 'green', 'label': 'EF21', 'linestyle': '--'})], 
                   ax=ax,
-                  txtbox_kwargs=standard_textbox(f'$\\kappa = {L / mu}$', {'x': 0.65, 'y': 0.15}),
+                  txtbox_kwargs=standard_textbox(f'$\\kappa = {int(round(L / mu))}$', {'x': 0.65, 'y': 0.15}),
                   plt_legend=True, xlabel=r'$\epsilon$', ylabel=r'$\rho$', 
                   label_size=LABEL_SIZE, tick_size=TICK_SIZE, return_plt=True,
                   save_file=f'figures/cgd_superiority_mu_{mu}.pdf')
     plt.close()
 
 def generate_performance_plot(method):
-    fig_map = {"CGD": "Figure 3: performance_cgd.pdf ...", "EF": "Figure 4: performance_ef.pdf ...", "EF21": "Figure 5: performance_ef21.pdf ..."}
+    fig_map = {"CGD": "Figure 6: performance_cgd.pdf ...", "EF": "Figure 7: performance_ef.pdf ...", "EF21": "Figure 8: performance_ef21.pdf ..."}
     print(f"Generating {fig_map.get(method, method)}")
     rhos_full, _, _, _ = load_data_for_method(method)
     cycles = {}
@@ -379,7 +619,7 @@ def generate_performance_plot(method):
                 vmin=vmin, vmax=vmax,
                 levels=100,
                 cmap='Blues_r', center=False,
-                txtbox_kwargs=[standard_textbox(f'$\\kappa = {L / mu}$', {'x': 0.65}) for mu in reversed(mus)],
+                txtbox_kwargs=[standard_textbox(f'$\\kappa = {int(round(L / mu))}$', {'x': 0.90, 'ha': 'right'}) for mu in reversed(mus)],
                 overlay_kwargs=overlay_kwargs,
                 increasing_colorbar=False,
                 colorbar_label=r'$\rho$',
@@ -391,7 +631,7 @@ def generate_performance_plot(method):
     plt.close()
 
 def generate_multiple_iterations(method):
-    fig_map = {"EF": "Figure 6: ef_multiple_iterations_delta_{delta}.pdf ...", "EF21": "Figure 7: ef21_multiple_iterations_delta_{delta}.pdf ..."}
+    fig_map = {"EF": "Figure 9: ef_multiple_iterations_delta_{delta}.pdf ...", "EF21": "Figure 10: ef21_multiple_iterations_delta_{delta}.pdf ..."}
     print(f"Generating {fig_map.get(method, method)}")
     n_iters = 10
     deltas = [0.25, 0.5, 0.75]
@@ -419,7 +659,7 @@ def generate_multiple_iterations(method):
     plt.close()
 
 def generate_best_etas():
-    print("Generating Figure 8: best_etas_{mu}_{L}.pdf ...")
+    print("Generating Figure 11: best_etas_{mu}_{L}.pdf ...")
     gridsearch_resolution = 300
     Ls = [1, 5, 10]
     
@@ -454,11 +694,11 @@ def generate_best_etas():
     plt.close()
 
 def generate_richtarik_log_complexity():
-    print("Generating Figure 9: richtarik_log_comparison.pdf ...")
+    print("Generating Figure 12: richtarik_log_comparison.pdf ...")
 
     method = 'EF21'
-    kappas = [2, 10, 50]
-    grid_resolution_local = 120
+    kappas = [2, 4, 10]
+    grid_resolution_local = 100
     epsilon_vals = np.linspace(0.01, 0.99, grid_resolution_local)
 
     contour_data = []
@@ -506,9 +746,9 @@ def generate_richtarik_log_complexity():
 
 
 def generate_optimal_contraction_comparison():
-    print("Generating Figure 11: complexity_cgd_vs_ef.pdf ...")
+    print("Generating Figure 5: complexity_cgd_vs_ef.pdf ...")
 
-    data = _load_cgd_superiority_data("Figure 11")
+    data = _load_cgd_superiority_data("complexity_cgd_vs_ef")
     rhos_cgd_optimal = data['rhos_cgd_optimal']
     rhos_ef_optimal = data['rhos_ef_optimal']
 
@@ -565,7 +805,7 @@ def generate_optimal_contraction_comparison():
             tick_size=TICK_SIZE,
             txtbox_kwargs=standard_textbox(
                 f'$\\kappa = {int(round(L / mu))}$',
-                {'x': 0.95, 'y': 0.15, 'ha': 'right', 'va': 'top'}
+                {'x': 0.95, 'y': 0.95, 'ha': 'right', 'va': 'top'}
             ),
             return_plt=True,
         )
@@ -633,17 +873,19 @@ def main():
         "Figure 1": generate_performance_comparison,
         "Table 1": generate_ef_equal_ef21,
         "Table 2": lambda: generate_tightness_table("CGD"),
-        "Figure 2": generate_cgd_superiority,
-        "Figure 3": lambda: generate_performance_plot("CGD"),
-        "Figure 4": lambda: generate_performance_plot("EF"),
-        "Figure 5": lambda: generate_performance_plot("EF21"),
+        "Figure 2": generate_rate_comparison,
+        "Figure 3": generate_rate_log_complexity_fig12,
+        "Figure 4": generate_cgd_vs_ef_rate_plot,
+        "Figure 5": generate_optimal_contraction_comparison,
+        "Figure 6": lambda: generate_performance_plot("CGD"),
+        "Figure 7": lambda: generate_performance_plot("EF"),
+        "Figure 8": lambda: generate_performance_plot("EF21"),
         "Table 3": lambda: generate_tightness_table("EF"),
         "Table 4": lambda: generate_tightness_table("EF21"),
-        "Figure 6": lambda: generate_multiple_iterations("EF"),
-        "Figure 7": lambda: generate_multiple_iterations("EF21"),
-        "Figure 8": generate_best_etas,
-        "Figure 9": generate_richtarik_log_complexity,
-        "Figure 11": generate_optimal_contraction_comparison
+        "Figure 9": lambda: generate_multiple_iterations("EF"),
+        "Figure 10": lambda: generate_multiple_iterations("EF21"),
+        "Figure 11": generate_best_etas,
+        "Figure 12": generate_richtarik_log_complexity,
     }
 
     if args.experiment == "all":
